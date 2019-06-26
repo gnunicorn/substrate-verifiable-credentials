@@ -1,0 +1,21 @@
+[lib]
+crate-type = ['cdylib']
+[profile.release]
+lto = true
+panic = 'abort'
+
+[package]
+authors = ['Parity Technologies <admin@parity.io>']
+edition = '2018'
+name = 'substrate-verifiable-credentials-runtime-wasm'
+version = '1.0.0'
+
+[workspace]
+members = []
+
+[features]
+default = []
+std = ['substrate-verifiable-credentials-runtime/std']
+[dependencies.substrate-verifiable-credentials-runtime]
+default-features = false
+path = '..'
