@@ -1,6 +1,7 @@
 use support::{decl_event, decl_module, decl_storage, StorageMap, StorageValue, ensure};
 use system::ensure_signed;
 use parity_codec::{Decode, Encode};
+use core::u32::MAX as MAX_SUBJECT;
 
 pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
@@ -98,6 +99,8 @@ decl_module! {
         pub fn create_subject(origin) {
             let sender = ensure_signed(origin)?;
             let subject_count = <SubjectCount<T>>::get();
+
+            ensure!(subject_count < MAX_SUBJECT, "Max issuance count reached");
 
             <Subjects<T>>::insert(subject_count, sender.clone());
 
