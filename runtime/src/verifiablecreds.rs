@@ -20,7 +20,7 @@ decl_storage! {
         SubjectNonce get(subject_nonce) config(): u32;
         // Issuers can issue credentials to others.
         // Issuer to Subject mapping.
-        Issuers get(issuers) config(): map T::AccountId => u32;
+        Subjects get(subjects) config(): map u32 => T::AccountId;
         // Credentials store.
         // Mapping (holder, subject) to Credential.
         Credentials get(credentials): map (T::AccountId, u32) => Credential<T::Moment, T::AccountId>;
@@ -51,8 +51,8 @@ decl_module! {
             // Issue the credential - add to storage.
 
             let sender = ensure_signed(origin)?;
-            let issuer_subject = Self::issuers(sender.clone());
-            ensure!(issuer_subject == subject, "Unauthorized.");
+            let subject_issuer = Self::subjects(subject);
+            ensure!(subject_issuer == sender, "Unauthorized.");
 
             let now = <timestamp::Module<T>>::get();
             let cred = Credential {
@@ -74,8 +74,8 @@ decl_module! {
             // Change the bool flag of the stored credential tuple to false.
 
             let sender = ensure_signed(origin)?;
-            let issuer_subject = Self::issuers(sender.clone());
-            ensure!(issuer_subject == subject, "Unauthorized.");
+            let subject_issuer = Self::subjects(subject);
+            ensure!(subject_issuer == sender, "Unauthorized.");
             ensure!(<Credentials<T>>::exists((to.clone(), subject)), "Credential not issued yet.");
 
             <Credentials<T>>::remove((to.clone(), subject));
@@ -94,8 +94,7 @@ decl_module! {
             let sender = ensure_signed(origin)?;
             let subject_nonce = <SubjectNonce<T>>::get();
 
-            // Rewrites if the mapping already exists.
-            <Issuers<T>>::insert(sender.clone(), subject_nonce);
+            <Subjects<T>>::insert(subject_nonce, sender.clone());
 
             // Update the subject nonce.
             <SubjectNonce<T>>::put(subject_nonce + 1);
