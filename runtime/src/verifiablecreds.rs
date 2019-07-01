@@ -19,7 +19,7 @@ pub struct Credential<Timestamp, AccountId> {
 decl_storage! {
     trait Store for Module<T: Trait> as VerifiableCreds {
         // global nonce for subject count
-        SubjectNonce get(subject_nonce) config(): Subject;
+        SubjectCount get(subject_count) config(): Subject;
         // Issuers can issue credentials to others.
         // Issuer to Subject mapping.
         Subjects get(subjects) config(): map Subject => T::AccountId;
@@ -97,15 +97,15 @@ decl_module! {
         /// Create a new subject.
         pub fn create_subject(origin) {
             let sender = ensure_signed(origin)?;
-            let subject_nonce = <SubjectNonce<T>>::get();
+            let subject_count = <SubjectCount<T>>::get();
 
-            <Subjects<T>>::insert(subject_nonce, sender.clone());
+            <Subjects<T>>::insert(subject_count, sender.clone());
 
             // Update the subject nonce.
-            <SubjectNonce<T>>::put(subject_nonce + 1);
+            <SubjectCount<T>>::put(subject_count + 1);
 
             // Deposit the event.
-            Self::deposit_event(RawEvent::SubjectCreated(sender, subject_nonce));
+            Self::deposit_event(RawEvent::SubjectCreated(sender, subject_count));
         }
     }
 }
@@ -163,7 +163,7 @@ mod tests {
     t.extend(
       GenesisConfig::<Test> {
         issuers: vec![(1, 1), (2, 2)],
-        subject_nonce: 3,
+        subject_count: 3,
       }
       .build_storage()
       .unwrap()
