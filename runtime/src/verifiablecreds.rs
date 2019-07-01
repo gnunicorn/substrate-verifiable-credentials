@@ -33,8 +33,10 @@ decl_event!(
     where
         AccountId = <T as system::Trait>::AccountId,
     {
-        // A credential is issued - holder, cred, issuer
+        // A credential is issued - holder, subj, issuer
         CredentialIssued(AccountId, u32, AccountId),
+        // A credential is revoked - holder, subj, issuer
+        CredentialRevoked(AccountId, u32, AccountId),
         // A new subject is created.
         SubjectCreated(AccountId, u32),
     }
@@ -79,6 +81,7 @@ decl_module! {
             ensure!(<Credentials<T>>::exists((to.clone(), subject)), "Credential not issued yet.");
 
             <Credentials<T>>::remove((to.clone(), subject));
+            Self::deposit_event(RawEvent::CredentialRevoked(to, subject, sender));
         }
 
         /// Verify a credential.
