@@ -1,4 +1,4 @@
-use support::{decl_event, decl_module, decl_storage, StorageMap, ensure};
+use support::{decl_event, decl_module, decl_storage, StorageMap, StorageValue, ensure};
 use system::ensure_signed;
 use parity_codec::{Decode, Encode};
 
@@ -6,26 +6,24 @@ pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
 }
 
-/// The CredentialType - In context of workshop attendance
 #[cfg_attr(feature = "std", derive(Debug))]
-#[derive(Encode, Decode, Clone, Eq, PartialEq)]
-pub enum CredentialType {
-    Attended,
-    Conducted,
-    Volunteered
-}
-
-impl Default for CredentialType {
-    fn default() -> Self { CredentialType::Attended }
+#[derive(Encode, Decode, Clone, Default, PartialEq)]
+pub struct Credential<Timestamp, AccountId> {
+   subject: u32,
+   when: Timestamp,
+   by: AccountId
 }
 
 decl_storage! {
     trait Store for Module<T: Trait> as VerifiableCreds {
+        // global nonce for subject count
+        SubjectNonce get(subject_nonce) config(): u32;
         // Issuers can issue credentials to others.
-        Issuers get(issuers) config(): map T::AccountId => bool;
+        // Issuer to Subject mapping.
+        Issuers get(issuers) config(): map T::AccountId => u32;
         // Credentials store.
-        // Mapping (holder, subject) to (issuer, timestamp, is_valid).
-        Credentials get(credentials): map (T::AccountId, CredentialType) => (T::AccountId, T::Moment, bool);
+        // Mapping (holder, subject) to Credential.
+        Credentials get(credentials): map (T::AccountId, u32) => Credential<T::Moment, T::AccountId>;
     }
     extra_genesis_skip_phantom_data_field;
 }
@@ -36,7 +34,9 @@ decl_event!(
         AccountId = <T as system::Trait>::AccountId,
     {
         // A credential is issued - holder, cred, issuer
-        CredentialIssued(AccountId, CredentialType, AccountId),
+        CredentialIssued(AccountId, u32, AccountId),
+        // A new subject is created.
+        SubjectCreated(AccountId, u32),
     }
 );
 
@@ -46,55 +46,62 @@ decl_module! {
 
         /// Issue a credential to an identity.
         /// Only an issuer can call this function.
-        pub fn issue_credential(origin, to: T::AccountId, credential: CredentialType) {
+        pub fn issue_credential(origin, to: T::AccountId, subject: u32) {
             // Check if origin is an issuer.
             // Issue the credential - add to storage.
 
             let sender = ensure_signed(origin)?;
-            ensure!(Self::issuers(sender.clone()), "Unauthorized.");
+            let issuer_subject = Self::issuers(sender.clone());
+            ensure!(issuer_subject == subject, "Unauthorized.");
 
             let now = <timestamp::Module<T>>::get();
-            <Credentials<T>>::insert((to.clone(), credential.clone()), (sender.clone(), now, true));
+            let cred = Credential {
+              subject,
+              when: now,
+              by: sender.clone()
+            };
 
-            // If credential is of the type `Conducted` the workshop,
-            // add the holder as an issuer too.
-            if credential == CredentialType::Conducted {
-                 <Issuers<T>>::insert(to.clone(), true);
-            }
+            <Credentials<T>>::insert((to.clone(), subject), cred);
 
-            Self::deposit_event(RawEvent::CredentialIssued(to, credential, sender));
+            Self::deposit_event(RawEvent::CredentialIssued(to, subject, sender));
         }
 
         /// Revoke a credential.
         /// Only an issuer can call this function. 
-        pub fn revoke_credential(origin, to: T::AccountId, credential: CredentialType) {
+        pub fn revoke_credential(origin, to: T::AccountId, subject: u32) {
             // Check if origin is an issuer.
             // Check if credential is issued.
             // Change the bool flag of the stored credential tuple to false.
 
             let sender = ensure_signed(origin)?;
-            ensure!(<Issuers<T>>::exists(sender.clone()), "Unauthorized.");
-            ensure!(<Credentials<T>>::exists((to.clone(), credential.clone())), "Credential not issued yet.");
+            let issuer_subject = Self::issuers(sender.clone());
+            ensure!(issuer_subject == subject, "Unauthorized.");
+            ensure!(<Credentials<T>>::exists((to.clone(), subject)), "Credential not issued yet.");
 
-            <Credentials<T>>::mutate((to.clone(), credential.clone()), |v| { v.2 = false } );
-
-            // If credential is of the type `Conducted` the workshop,
-            // remove the holder as an issuer.
-            if credential == CredentialType::Conducted {
-                 <Issuers<T>>::remove(to.clone());
-            }
+            <Credentials<T>>::remove((to.clone(), subject));
         }
 
         /// Verify a credential.
-        /// Only an allowed verifier can verify.
-        pub fn verify_credential(origin, holder: T::AccountId, credential: CredentialType) {
-            let sender = ensure_signed(origin)?;
+        pub fn verify_credential(origin, holder: T::AccountId, subject: u32) {
+            let _sender = ensure_signed(origin)?;
 
             // Ensure credential is issued and allowed to be verified.
-            ensure!(<Credentials<T>>::exists((holder.clone(), credential.clone())), "Credential not issued yet.");
+            ensure!(<Credentials<T>>::exists((holder.clone(), subject)), "Credential not issued yet.");
+        }
 
-            let cred = <Credentials<T>>::get((sender.clone(), credential.clone()));
-            ensure!(cred.2 == true, "Credential not valid.");
+        /// Create a new subject.
+        pub fn create_subject(origin) {
+            let sender = ensure_signed(origin)?;
+            let subject_nonce = <SubjectNonce<T>>::get();
+
+            // Rewrites if the mapping already exists.
+            <Issuers<T>>::insert(sender.clone(), subject_nonce);
+
+            // Update the subject nonce.
+            <SubjectNonce<T>>::put(subject_nonce + 1);
+
+            // Deposit the event.
+            Self::deposit_event(RawEvent::SubjectCreated(sender, subject_nonce));
         }
     }
 }
@@ -151,7 +158,8 @@ mod tests {
       .0;
     t.extend(
       GenesisConfig::<Test> {
-        issuers: vec![(1, true), (2, true)],
+        issuers: vec![(1, 1), (2, 2)],
+        subject_nonce: 3,
       }
       .build_storage()
       .unwrap()
@@ -164,7 +172,7 @@ mod tests {
   fn should_fail_issue() {
     with_externalities(&mut new_test_ext(), || {
         assert_noop!(
-            VerifiableCreds::issue_credential(Origin::signed(4), 3, CredentialType::Attended),
+            VerifiableCreds::issue_credential(Origin::signed(1), 3, 2),
             "Unauthorized.");
     });
   }
@@ -173,7 +181,7 @@ mod tests {
   fn should_issue() {
     with_externalities(&mut new_test_ext(), || {
         assert_ok!(
-            VerifiableCreds::issue_credential(Origin::signed(1), 3, CredentialType::Attended));
+            VerifiableCreds::issue_credential(Origin::signed(1), 3, 1));
     });
   }
 
@@ -181,56 +189,31 @@ mod tests {
   fn should_revoke() {
     with_externalities(&mut new_test_ext(), || {
         assert_ok!(
-            VerifiableCreds::issue_credential(Origin::signed(1), 3, CredentialType::Attended));
+            VerifiableCreds::issue_credential(Origin::signed(1), 3, 1));
         assert_ok!(
-            VerifiableCreds::revoke_credential(Origin::signed(1), 3, CredentialType::Attended));
+            VerifiableCreds::revoke_credential(Origin::signed(1), 3, 1));
     });
   }
 
   #[test]
-  fn should_not_add_issuer() {
+  fn should_add_subject() {
     with_externalities(&mut new_test_ext(), || {
         assert_ok!(
-            VerifiableCreds::issue_credential(Origin::signed(1), 3, CredentialType::Attended));
-        assert_noop!(
-            VerifiableCreds::issue_credential(Origin::signed(3), 3, CredentialType::Conducted),
-            "Unauthorized.");
+            VerifiableCreds::create_subject(Origin::signed(3)));
+        assert_eq!(
+            VerifiableCreds::issuers(3), 3);
     });
   }
 
   #[test]
-  fn should_add_issuer() {
+  fn should_issue_new_subject() {
     with_externalities(&mut new_test_ext(), || {
         assert_ok!(
-            VerifiableCreds::issue_credential(Origin::signed(1), 3, CredentialType::Conducted));
+            VerifiableCreds::create_subject(Origin::signed(3)));
         assert_eq!(
-            VerifiableCreds::issuers(3), true);
-    });
-  }
-
-  #[test]
-  fn should_remove_issuer() {
-    with_externalities(&mut new_test_ext(), || {
+            VerifiableCreds::issuers(3), 3);
         assert_ok!(
-            VerifiableCreds::issue_credential(Origin::signed(1), 3, CredentialType::Conducted));
-        assert_ok!(
-            VerifiableCreds::revoke_credential(Origin::signed(1), 3, CredentialType::Conducted));
-        assert_eq!(
-            VerifiableCreds::issuers(3), false);
-    });
-  }
-
-  #[test]
-  fn should_add_issuer_new_issuer() {
-    with_externalities(&mut new_test_ext(), || {
-        assert_ok!(
-            VerifiableCreds::issue_credential(Origin::signed(1), 3, CredentialType::Conducted));
-        assert_eq!(
-            VerifiableCreds::issuers(3), true);
-        assert_ok!(
-            VerifiableCreds::issue_credential(Origin::signed(3), 4, CredentialType::Conducted));
-        assert_eq!(
-            VerifiableCreds::issuers(4), true);
+            VerifiableCreds::issue_credential(Origin::signed(3), 4, 3));
     });
   }
 }

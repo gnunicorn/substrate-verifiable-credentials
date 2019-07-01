@@ -2,9 +2,9 @@
 
 A minimal Substrate runtime for verifiable credentials' issuance and verification.
 
-The scenario is of a classroom or workshop where the teachers can issue credentials to students, volunteers and other teacher for attending, assisting with and teaching at the workshop/class respectively.
-
 The inital set of credential issuers are set in the GenesisConfig.
+
+Credentials are issued to holders for subjects. The runtime allows creation of subjects and the identity creating a subject becomes the `issuer` for that `subject`. Credentials can also be revoked by the issuers who issued them.
 
 ## Build
 
@@ -32,8 +32,10 @@ cargo run -- --dev
 
 ```json
 {
-  "CredentialType": {
-    "_enum": ["Attended", "Conducted", "Volunteered"]
+  "Credential": {
+    "subject": "u32",
+    "when": "Moment",
+    "by": "AccountId"
   }
 }
 ```

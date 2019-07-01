@@ -116,7 +116,8 @@ fn testnet_genesis(initial_authorities: Vec<AuthorityId>, endowed_accounts: Vec<
 			key: root_key,
 		}),
 		verifiablecreds: Some(VerifiableCredsConfig {
-			issuers: vec![(account_key("Alice"), true), (account_key("Bob"), true)],
+			issuers: vec![(account_key("Alice"), 1), (account_key("Bob"), 2)],
+			subject_nonce: 3,
 		}),
 	}
 }
