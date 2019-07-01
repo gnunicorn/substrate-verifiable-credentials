@@ -6,10 +6,12 @@ pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
 }
 
+pub type Subject = u32;
+
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Encode, Decode, Clone, Default, PartialEq)]
 pub struct Credential<Timestamp, AccountId> {
-   subject: u32,
+   subject: Subject,
    when: Timestamp,
    by: AccountId
 }
@@ -17,13 +19,13 @@ pub struct Credential<Timestamp, AccountId> {
 decl_storage! {
     trait Store for Module<T: Trait> as VerifiableCreds {
         // global nonce for subject count
-        SubjectNonce get(subject_nonce) config(): u32;
+        SubjectNonce get(subject_nonce) config(): Subject;
         // Issuers can issue credentials to others.
         // Issuer to Subject mapping.
-        Subjects get(subjects) config(): map u32 => T::AccountId;
+        Subjects get(subjects) config(): map Subject => T::AccountId;
         // Credentials store.
         // Mapping (holder, subject) to Credential.
-        Credentials get(credentials): map (T::AccountId, u32) => Credential<T::Moment, T::AccountId>;
+        Credentials get(credentials): map (T::AccountId, Subject) => Credential<T::Moment, T::AccountId>;
     }
     extra_genesis_skip_phantom_data_field;
 }
@@ -34,11 +36,11 @@ decl_event!(
         AccountId = <T as system::Trait>::AccountId,
     {
         // A credential is issued - holder, subj, issuer
-        CredentialIssued(AccountId, u32, AccountId),
+        CredentialIssued(AccountId, Subject, AccountId),
         // A credential is revoked - holder, subj, issuer
-        CredentialRevoked(AccountId, u32, AccountId),
+        CredentialRevoked(AccountId, Subject, AccountId),
         // A new subject is created.
-        SubjectCreated(AccountId, u32),
+        SubjectCreated(AccountId, Subject),
     }
 );
 
@@ -48,7 +50,7 @@ decl_module! {
 
         /// Issue a credential to an identity.
         /// Only an issuer can call this function.
-        pub fn issue_credential(origin, to: T::AccountId, subject: u32) {
+        pub fn issue_credential(origin, to: T::AccountId, subject: Subject) {
             // Check if origin is an issuer.
             // Issue the credential - add to storage.
 
@@ -70,7 +72,7 @@ decl_module! {
 
         /// Revoke a credential.
         /// Only an issuer can call this function. 
-        pub fn revoke_credential(origin, to: T::AccountId, subject: u32) {
+        pub fn revoke_credential(origin, to: T::AccountId, subject: Subject) {
             // Check if origin is an issuer.
             // Check if credential is issued.
             // Change the bool flag of the stored credential tuple to false.
@@ -85,7 +87,7 @@ decl_module! {
         }
 
         /// Verify a credential.
-        pub fn verify_credential(origin, holder: T::AccountId, subject: u32) {
+        pub fn verify_credential(origin, holder: T::AccountId, subject: Subject) {
             let _sender = ensure_signed(origin)?;
 
             // Ensure credential is issued and allowed to be verified.
